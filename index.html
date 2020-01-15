@@ -40,13 +40,10 @@
           <label for='concavity'>Сглаживание</label>
           <input id='concavity' type='number' value='2' class='stretch' />
         </fieldset>
-        <!-- <fieldset>
-          <label for='lengthThreshold'>Порог длины</label>
-          <input id='lengthThreshold' type='number' value='0' class='stretch' />
-        </fieldset> -->
+
 
         <fieldset>
-          <label for='userInterval'>Произвольный интервал</label>
+          <label for='userInterval'>Произвольный интервал (>20)</label>
           <input id='userInterval' type='number' value='0' class='stretch' />
         </fieldset>
 
@@ -64,27 +61,23 @@
           <input type='checkbox' id='i20' checked='checked' value=20>
           <label for='i20' class='button icon check quiet'>20мин.</label>
         </fieldset>
-        <!-- <div class='rounded-toggle inline'>
-          <input type='radio' id='kilometers' name='units' value='kilometers' checked='checked'>
-          <label for='kilometers'>Километры</label>
-          <input type='radio' id='miles' name='units' value='miles'>
-          <label for='miles'>Мили</label>
-        </div> -->
 
-                <fieldset>
-                  <button id="saveJson" class="button">Сохранить в json</button>
-                </fieldset>
+        <fieldset>
+          <button id="saveJson" class="button" onclick="download(gridSource._data)">Сохранить в json</button>
+        </fieldset>
       </form>
     </div>
   </div>
 
   <script>
-    //поиск параметров в адресной строке
-    // var args = location.search.replace(/^\?/,'').split('&').reduce(function(o, param) {
-    //   var keyvalue=param.split('=');
-    //   o[keyvalue[0]] = keyvalue[1];
-    //   return o;
-    // }, {});
+    function download(content, fileName = Date.now() + 'isohron.json', contentType = 'application/json') {
+      var a = document.createElement("a");
+      var file = new Blob([JSON.stringify(content, null, 2)], {type: contentType});
+      a.href = URL.createObjectURL(file);
+      a.download = fileName;
+      a.click();
+    }
+
 
     //mapboxgl.accessToken = args.access_token || localStorage.accessToken;
     mapboxgl.accessToken = "pk.eyJ1IjoiYW5pYW1hbnNvbiIsImEiOiJjazVheGNxbHYwNzJqM2VucXdkazJhaThmIn0.JydZ_Q-2CEeYT5uUZoTBtQ";
@@ -95,9 +88,11 @@
         container: mapEl,
         style: 'mapbox://styles/mapbox/light-v8',
         center: [44.52398656279621, 48.70806558614342],
-        zoom: 10
+        zoom: 10,
+        antialias: true
     });
 
+    //создаем ресурс для сетки координат
     var gridSource = new mapboxgl.GeoJSONSource({
       data: {
         type: 'FeatureCollection',
@@ -105,20 +100,21 @@
       }
     });
 
-    var userInterval = document.getElementById('userInterval').value;
-
+    //цвет слоев
     var layers = [
-      [30, '#5aa832', 0.1],
-      [20, '#00aaFF', 0.2],
-      [15, '#00aaFF', 0.3],
-      [10, '#00aaFF', 0.4],
-      [5, '#00aaFF', 0.6],
+      [20, '#00aaFF', 0.3],
+      [15, '#00aaFF', 0.4],
+      [10, '#00aaFF', 0.5],
+      [5, '#0dba80', 0.7],
     ];
 
+    //действия выполняемые после загрузки стилей
     map.on('style.load', function () {
+      //добавляем ресурс с именем grid
       map.addSource('grid', gridSource);
 
       layers.forEach(function (layer, i) {
+        //добавляем слой
         map.addLayer({
           'id': 'grid-' + i,
           'type': 'fill',
@@ -134,7 +130,25 @@
             ['<=', 'time', layer[0]]
           ]
         }, 'road-path');
+
       });
+
+      map.addLayer({
+          'id': 'grid-5',
+          'type': 'fill',
+          'source': 'grid',
+          'layout': {},
+          'paint': {
+            'fill-color': '#f0d405',
+            'fill-opacity': 0.2
+          },
+          'filter': [
+            'all',
+            ['==', '$type', 'Polygon'],
+            ['>', 'time', 20]
+          ]
+        }, 'road-path');
+
     });
 
     //инициализируем при клике на карту
@@ -144,6 +158,8 @@
 
       //адрес OSRM сервера
       var url = new URL("http://localhost:4000");
+
+      var userInterval = document.getElementById('userInterval').value;
 
       //проверяем какие интервалы включены
       //возвращаем value отмеченых чекбоксов
@@ -156,8 +172,6 @@
       if(document.getElementById('showUserInterval').checked & userInterval > 0){
         console.log("show UI checked", document.getElementById('userInterval').value);
         intervals.push(userInterval);
-        // layers.push([userInterval, '#5aa832', 0.1]);
-
       }
 
       //собираем все настройки из формы
@@ -176,9 +190,7 @@
       //формируем из настроек сроку запроса и складываем в url
       Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
 
-      // console.log("show UI ==> ", showUserInterval);
-      //если пользовательский интервал включен, добавим значение в массив
-      // (!showUserInterval) ? intervals.push(userInterval) : 0;
+
       console.log("intervals ==> ", intervals);
 
       //проверяем какие интервалы включены в массив intervals и добавляем их в строку запроса
