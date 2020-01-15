@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8' />
+    <title>Вершкова Анна - Isohron</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+    <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.21.0/mapbox-gl.js'></script>
+    <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.21.0/mapbox-gl.css' rel='stylesheet' />
+    <link href='https://www.mapbox.com/base/latest/base.css' rel='stylesheet' />
+    <style>
+        #app { position:absolute; top:0; right:0; bottom:0; left:0; }
+        #map { position:absolute; top:0; right:0; bottom:0; left:0; }
+        .mapboxgl-popup-content { color:#000 }
+        .mapboxgl-ctrl.mapboxgl-ctrl-attrib {
+          padding: 0 5px;
+          background-color: rgba(56, 135, 190, 0.51);
+          margin: 0;
+        }
+    </style>
+</head>
+<body>
+  <div id='app' class='col12 contain fill-navy dark clip'>
+    <div id='map'></div>
+    <div class='pin-right pad2'>
+      <a href='#settings' class='button'>Настройки</a>
+    </div>
+    <div id='settings' class='col4 pad2 fill-darken3 pin-left offcanvas-left animate scroll-styled'>
+      <a href='#' class='fill-darken2 pad1 icon close button fr'></a>
+      <div class='clearfix'></div>
+      <form>
+        <fieldset>
+          <label for='radius'>Радиус расчета</label>
+          <input id='radius' type='number' value='13' class='stretch' />
+        </fieldset>
+        <fieldset>
+          <label for='cellSize'>Размер ячейки (Детализация)</label>
+          <input id='cellSize' type='number' value='0.2' class='stretch' />
+        </fieldset>
+        <fieldset>
+          <label for='concavity'>Сглаживание</label>
+          <input id='concavity' type='number' value='2' class='stretch' />
+        </fieldset>
+        <!-- <fieldset>
+          <label for='lengthThreshold'>Порог длины</label>
+          <input id='lengthThreshold' type='number' value='0' class='stretch' />
+        </fieldset> -->
+
+        <fieldset>
+          <label for='userInterval'>Произвольный интервал</label>
+          <input id='userInterval' type='number' value='0' class='stretch' />
+        </fieldset>
+
+        <fieldset class='checkbox-pill clearfix'>
+          <input type='checkbox' id='showUserInterval' value='true'>
+          <label for='showUserInterval' class='button icon check quiet'>Показывать произвольный интервал</label>
+        </fieldset>
+        <fieldset class='intervals checkbox-pill clearfix'>
+          <input type='checkbox' id='i5' checked='checked' value=5>
+          <label for='i5' class='button icon check quiet'>5мин.</label>
+          <input type='checkbox' id='i10' checked='checked' value=10>
+          <label for='i10' class='button icon check quiet'>10мин.</label>
+          <input type='checkbox' id='i15' checked='checked' value=15>
+          <label for='i15' class='button icon check quiet'>15мин.</label>
+          <input type='checkbox' id='i20' checked='checked' value=20>
+          <label for='i20' class='button icon check quiet'>20мин.</label>
+        </fieldset>
+        <!-- <div class='rounded-toggle inline'>
+          <input type='radio' id='kilometers' name='units' value='kilometers' checked='checked'>
+          <label for='kilometers'>Километры</label>
+          <input type='radio' id='miles' name='units' value='miles'>
+          <label for='miles'>Мили</label>
+        </div> -->
+
+                <fieldset>
+                  <button id="saveJson" class="button">Сохранить в json</button>
+                </fieldset>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    //поиск параметров в адресной строке
+    // var args = location.search.replace(/^\?/,'').split('&').reduce(function(o, param) {
+    //   var keyvalue=param.split('=');
+    //   o[keyvalue[0]] = keyvalue[1];
+    //   return o;
+    // }, {});
+
+    //mapboxgl.accessToken = args.access_token || localStorage.accessToken;
+    mapboxgl.accessToken = "pk.eyJ1IjoiYW5pYW1hbnNvbiIsImEiOiJjazVheGNxbHYwNzJqM2VucXdkazJhaThmIn0.JydZ_Q-2CEeYT5uUZoTBtQ";
+    var mapEl = document.getElementById('map');
+
+    //инициализируем библиотеку Mapbox GL JS
+    var map = new mapboxgl.Map({
+        container: mapEl,
+        style: 'mapbox://styles/mapbox/light-v8',
+        center: [44.52398656279621, 48.70806558614342],
+        zoom: 10
+    });
+
+    var gridSource = new mapboxgl.GeoJSONSource({
+      data: {
+        type: 'FeatureCollection',
+        features: []
+      }
+    });
+
+    var userInterval = document.getElementById('userInterval').value;
+
+    var layers = [
+      [30, '#5aa832', 0.1],
+      [20, '#00aaFF', 0.2],
+      [15, '#00aaFF', 0.3],
+      [10, '#00aaFF', 0.4],
+      [5, '#00aaFF', 0.6],
+    ];
+
+    map.on('style.load', function () {
+      map.addSource('grid', gridSource);
+
+      layers.forEach(function (layer, i) {
+        map.addLayer({
+          'id': 'grid-' + i,
+          'type': 'fill',
+          'source': 'grid',
+          'layout': {},
+          'paint': {
+            'fill-color': layer[1],
+            'fill-opacity': layer[2]
+          },
+          'filter': [
+            'all',
+            ['==', '$type', 'Polygon'],
+            ['<=', 'time', layer[0]]
+          ]
+        }, 'road-path');
+      });
+    });
+
+    //инициализируем при клике на карту
+    map.on('click', function (e) {
+      mapEl.classList.add('loading');
+      console.log(e);
+
+      //адрес OSRM сервера
+      var url = new URL("http://localhost:4000");
+
+      //проверяем какие интервалы включены
+      //возвращаем value отмеченых чекбоксов
+      var intervals = Array.from(
+        document.querySelectorAll('.intervals input[type="checkbox"]:checked')
+      ).map(function(el) { return el.value });
+
+
+
+      if(document.getElementById('showUserInterval').checked & userInterval > 0){
+        console.log("show UI checked", document.getElementById('userInterval').value);
+        intervals.push(userInterval);
+        // layers.push([userInterval, '#5aa832', 0.1]);
+
+      }
+
+      //собираем все настройки из формы
+      var params = {
+        lng: e.lngLat.lng,
+        lat: e.lngLat.lat,
+        deintersect: true,
+        lengthThreshold: 0,
+        radius: document.getElementById('radius').value,
+        cellSize: document.getElementById('cellSize').value,
+        concavity: document.getElementById('concavity').value,
+        units: "kilometers",
+      };
+
+
+      //формируем из настроек сроку запроса и складываем в url
+      Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+
+      // console.log("show UI ==> ", showUserInterval);
+      //если пользовательский интервал включен, добавим значение в массив
+      // (!showUserInterval) ? intervals.push(userInterval) : 0;
+      console.log("intervals ==> ", intervals);
+
+      //проверяем какие интервалы включены в массив intervals и добавляем их в строку запроса
+      (intervals.length > 0 ? intervals : [5, 10, 15, 20]).forEach(interval => url.searchParams.append('intervals', interval));
+
+      console.groupCollapsed(e.lngLat.lng, e.lngLat.lat);
+      console.time('request');
+
+      //делаем запрос в OSRM Backend
+      fetch(url)
+        .then(response => response.json())
+        .then((data) => {
+          console.log(data);
+          console.timeEnd('request');
+          console.groupEnd();
+          gridSource.setData(data);
+          mapEl.classList.remove('loading');
+        })
+        .catch((error) => {
+          console.error(error);
+          mapEl.classList.remove('loading');
+        });
+    });
+
+    //параметры всплывающего окна
+    var popup = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false
+    });
+
+    //отображаем подсказку при перемещении мышки на карте
+    map.on('mousemove', function(e) {
+      // console.log('mouse e: ', e.originalEvent.buttons);
+      if(!e.originalEvent.buttons){
+
+        var features = map.queryRenderedFeatures(e.point, {
+          layers: ['grid-0', 'grid-1', 'grid-2', 'grid-3', 'grid-4', 'grid-5']
+        });
+
+        if (!features.length) {
+            popup.remove();
+            return;
+        }
+        var feature = features[0];
+        popup.setLngLat(e.lngLat)
+            .setHTML(feature.properties.time + ' минут')
+            .addTo(map);
+      }
+    });
+  </script>
+
+</body>
+</html>
